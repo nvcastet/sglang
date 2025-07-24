@@ -474,7 +474,6 @@ class DeepseekV2MoE(nn.Module):
         final_hidden_states.symmetric_memory = True
         if self.tp_size > 1 and not can_fuse_mlp_allreduce:
             final_hidden_states = tensor_model_parallel_all_reduce(final_hidden_states)
-        final_hidden_states.symmetric_memory = False
         return final_hidden_states
 
     def forward_normal(
@@ -505,7 +504,6 @@ class DeepseekV2MoE(nn.Module):
             final_hidden_states.symmetric_memory = True
         if self.tp_size > 1 and not can_fuse_mlp_allreduce:
             final_hidden_states = tensor_model_parallel_all_reduce(final_hidden_states)
-        final_hidden_states.symmetric_memory = False
         return final_hidden_states
 
     def forward_cpu(
@@ -1884,14 +1882,13 @@ class DeepseekV2DecoderLayer(nn.Module):
             hidden_states, residual, forward_batch
         )
 
-        with use_symmetric_memory(parallel_state.get_tp_group()):
-            hidden_states = self.self_attn(
-                positions=positions,
-                hidden_states=hidden_states,
-                forward_batch=forward_batch,
-                zero_allocator=zero_allocator,
-            )
-        hidden_states.symmetric_memory = True
+        #with use_symmetric_memory(parallel_state.get_tp_group()):
+        hidden_states = self.self_attn(
+            positions=positions,
+            hidden_states=hidden_states,
+            forward_batch=forward_batch,
+            zero_allocator=zero_allocator,
+        )
 
         hidden_states, residual = self.layer_communicator.prepare_mlp(
             hidden_states, residual, forward_batch

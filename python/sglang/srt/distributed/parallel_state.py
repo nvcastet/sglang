@@ -26,6 +26,7 @@ import gc
 import logging
 import os
 import pickle
+import traceback
 import weakref
 from collections import namedtuple
 from contextlib import contextmanager, nullcontext
@@ -470,10 +471,13 @@ class GroupCoordinator:
             and hasattr(input_, "symmetric_memory")
             and input_.symmetric_memory
         ):
-            #print(f"[parallel_state] Using symmetric memory")
             with self.pynccl_comm.change_state(enable=True, stream=torch.cuda.current_stream()):
                 self.pynccl_comm.all_reduce(input_)
                 return input_
+
+        if torch.distributed.get_rank() == 0:
+            print(f"not-registered allreduce: {input_.size()=} {input_.dtype=} {input_.device=}")
+            traceback.print_stack()
 
         if (
             self.ca_comm is not None

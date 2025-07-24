@@ -431,12 +431,11 @@ class CommunicateWithAllReduceAndLayerNormFn:
                     hidden_states, residual
                 )
             else:
-                # if cls._symm_tensor is None:
-                #     cls._symm_tensor = SymmMemoryTensor(get_tp_group())
-                # hidden_states_out = cls._symm_tensor.get_tensor(hidden_states.shape, hidden_states.dtype)
-                # hidden_states_out.copy_(hidden_states)
-                # hidden_states_out.symmetric_memory = True
-                # hidden_states = hidden_states_out
+                # with use_symmetric_memory(get_tp_group()):
+                #     hidden_states_symm = torch.empty_like(hidden_states)
+                # hidden_states_symm.copy_(hidden_states)
+                # hidden_states_symm.symmetric_memory = True
+                # hidden_states = hidden_states_symm
                 hidden_states = tensor_model_parallel_all_reduce(hidden_states)
                 hidden_states, residual = layernorm(hidden_states, residual)
         return hidden_states, residual

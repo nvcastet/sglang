@@ -4,6 +4,8 @@ import logging
 from enum import Enum
 from typing import List, Optional, Tuple
 
+from python.sglang.srt.distributed import parallel_state
+from python.sglang.srt.distributed.device_communicators.pynccl_allocator import use_symmetric_memory
 import torch
 
 from sglang.srt.distributed import (
@@ -551,24 +553,26 @@ class FusedMoE(torch.nn.Module):
         assert self.quant_method is not None
 
         # Matrix multiply.
-        final_hidden_states = self.quant_method.apply(
-            layer=self,
-            x=hidden_states,
-            topk_output=topk_output,
-            activation=self.activation,
-            apply_router_weight_on_input=self.apply_router_weight_on_input,
-            routed_scaling_factor=self.routed_scaling_factor,
-            **(
-                dict(
-                    tp_rank=self.tp_rank,
-                    tp_size=self.tp_size,
-                    ep_rank=self.ep_rank,
-                    ep_size=self.ep_size,
-                )
-                if self.quant_method.__class__.__name__ == "ModelOptNvFp4FusedMoEMethod"
-                else {}
-            ),
-        )
+        with use_symmetric_memory(parallel_state.get_tp_group()):
+            final_hidden_states = self.quant_method.apply(
+                layer=self,
+                x=hidden_states,
+                topk_output=topk_output,
+                activation=self.activation,
+                apply_router_weight_on_input=self.apply_router_weight_on_input,
+                routed_scaling_factor=self.routed_scaling_factor,
+                **(
+                    dict(
+                        tp_rank=self.tp_rank,
+                        tp_size=self.tp_size,
+                        ep_rank=self.ep_rank,
+                        ep_size=self.ep_size,
+                    )
+                    if self.quant_method.__class__.__name__ == "ModelOptNvFp4FusedMoEMethod"
+                    else {}
+                ),
+            )
+            final_hidden_states.symmetric_memory = True
 
         if self.reduce_results and (self.tp_size > 1 or self.ep_size > 1):
             final_hidden_states = tensor_model_parallel_all_reduce(final_hidden_states)

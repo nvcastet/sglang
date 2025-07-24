@@ -77,10 +77,15 @@ class use_symmetric_memory:
     def __exit__(self, exc_type, exc_val, exc_tb):
         global _registered_base_addrs
         self._mem_pool_ctx.__exit__(exc_type, exc_val, exc_tb)
+        to_print = False
         for segment in get_nccl_mem_pool().snapshot():
             if segment['address'] not in _registered_base_addrs:
                 # Check symmetric is maintained across all ranks
                 # TODO
+                if to_print and torch.distributed.get_rank() == 0:
+                    print(f"total_size={sum(segment['total_size'] for segment in get_nccl_mem_pool().snapshot())} allocated={sum(segment['allocated_size'] for segment in get_nccl_mem_pool().snapshot())}")
+                    print(f"{get_nccl_mem_pool().snapshot()=}")
+                    to_print = False
                 self.group_coordinator.pynccl_comm.register_comm_window_raw(segment['address'], segment['total_size'])
                 _registered_base_addrs.add(segment['address'])
 
