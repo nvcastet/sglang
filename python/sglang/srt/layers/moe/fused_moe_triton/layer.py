@@ -4,15 +4,15 @@ import logging
 from enum import Enum
 from typing import List, Optional, Tuple
 
-from python.sglang.srt.distributed import parallel_state
-from python.sglang.srt.distributed.device_communicators.pynccl_allocator import use_symmetric_memory
 import torch
 
 from sglang.srt.distributed import (
     get_tensor_model_parallel_rank,
     get_tensor_model_parallel_world_size,
+    parallel_state,
     tensor_model_parallel_all_reduce,
 )
+from sglang.srt.distributed.device_communicators.pynccl_allocator import use_symmetric_memory
 from sglang.srt.layers.moe.topk import TopKOutput
 from sglang.srt.layers.quantization.base_config import (
     QuantizationConfig,

@@ -6,19 +6,26 @@ from torch.cuda.memory import CUDAPluggableAllocator
 
 nccl_allocator_source = """
 #include <nccl.h>
-#include <c10/cuda/CUDAGuard.h>
+#include <ATen/cuda/CUDAGraphsUtils.cuh>
+#include <iostream>
+#include <cassert>
 extern "C" {
 
 void* nccl_alloc_plug(size_t size, int device, void* stream) {
+  std::cout << "Using ncclMemAlloc=" << size/(1024*1024) << " MB" << " stream=" << stream << std::endl;
+  if (at::cuda::currentStreamCaptureStatus() != at::cuda::CaptureStatus::None) {
+    std::cerr << "nccl_alloc_plug: in graph capture" << std::endl;
+    assert(false);
+  }
+
   void* ptr;
-  at::cuda::OptionalCUDAGuard gpuGuard(device);
   ncclResult_t err = ncclMemAlloc(&ptr, size);
   return ptr;
 
 }
 
 void nccl_free_plug(void* ptr, size_t size, int device, void* stream) {
-  at::cuda::OptionalCUDAGuard gpuGuard(device);
+  std::cout << "Using ncclMemFree" << std::endl;
   ncclResult_t err = ncclMemFree(ptr);
 }
 
@@ -77,13 +84,15 @@ class use_symmetric_memory:
     def __exit__(self, exc_type, exc_val, exc_tb):
         global _registered_base_addrs
         self._mem_pool_ctx.__exit__(exc_type, exc_val, exc_tb)
-        to_print = False
+        to_print = True
         for segment in get_nccl_mem_pool().snapshot():
             if segment['address'] not in _registered_base_addrs:
                 # Check symmetric is maintained across all ranks
                 # TODO
                 if to_print and torch.distributed.get_rank() == 0:
-                    print(f"total_size={sum(segment['total_size'] for segment in get_nccl_mem_pool().snapshot())} allocated={sum(segment['allocated_size'] for segment in get_nccl_mem_pool().snapshot())}")
+                    print(f"total_size={sum(s['total_size'] for s in get_nccl_mem_pool().snapshot())} allocated={sum(s['allocated_size'] for s in get_nccl_mem_pool().snapshot())}")
+                    streams = set(s['stream'] for s in get_nccl_mem_pool().snapshot())
+                    print(f"{streams=}")
                     print(f"{get_nccl_mem_pool().snapshot()=}")
                     to_print = False
                 self.group_coordinator.pynccl_comm.register_comm_window_raw(segment['address'], segment['total_size'])

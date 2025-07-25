@@ -13,14 +13,19 @@ from torch.utils import cpp_extension
 
 nccl_allocator_source = """
 #include <nccl.h>
-#include <c10/cuda/CUDAGuard.h>
+#include <ATen/cuda/CUDAGraphsUtils.cuh>
 #include <iostream>
+#include <cassert>
 extern "C" {
 
 void* nccl_alloc_plug(size_t size, int device, void* stream) {
   std::cout << "Using ncclMemAlloc" << std::endl;
+  if (at::cuda::currentStreamCaptureStatus() != at::cuda::CaptureStatus::None) {
+    std::cerr << "nccl_alloc_plug: in graph capture" << std::endl;
+    assert(false);
+  }
+
   void* ptr;
-  at::cuda::OptionalCUDAGuard gpuGuard(device);
   ncclResult_t err = ncclMemAlloc(&ptr, size);
   return ptr;
 
@@ -28,7 +33,6 @@ void* nccl_alloc_plug(size_t size, int device, void* stream) {
 
 void nccl_free_plug(void* ptr, size_t size, int device, void* stream) {
   std::cout << "Using ncclMemFree" << std::endl;
-  at::cuda::OptionalCUDAGuard gpuGuard(device);
   ncclResult_t err = ncclMemFree(ptr);
 }
 
