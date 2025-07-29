@@ -35,20 +35,10 @@ if TYPE_CHECKING:
     from sglang.srt.layers.moe.topk import TopKOutput
 
 if is_cuda():
-    from sgl_kernel import scaled_fp4_quant
+    from sgl_kernel import cutlass_scaled_fp4_mm, scaled_fp4_quant
 
 try:
-    from flashinfer import mm_fp4 as fp4_gemm
-
-    enable_flashinfer_fp4_gemm = True
-except ImportError:
-    if is_cuda():
-        from sgl_kernel import cutlass_scaled_fp4_mm as fp4_gemm
-    else:
-        fp4_gemm = None
-    enable_flashinfer_fp4_gemm = False
-
-try:
+    from flashinfer import fp4_quantize as fp4_quantize
     from flashinfer.fused_moe import cutlass_fused_moe as flashinfer_cutlass_fused_moe
 except ImportError:
     flashinfer_cutlass_fused_moe = None
@@ -693,16 +683,11 @@ class ModelOptFp4LinearMethod(LinearMethodBase):
         assert layer.weight_scale_interleaved.dtype == torch.float8_e4m3fn
         assert layer.alpha.dtype == torch.float32
 
-        w = layer.weight
-        w_scale_interleaved = layer.weight_scale_interleaved
-        if enable_flashinfer_fp4_gemm:
-            w = layer.weight.T
-            w_scale_interleaved = layer.weight_scale_interleaved.T
-        out = fp4_gemm(
+        out = cutlass_scaled_fp4_mm(
             x_fp4,
-            w,
+            layer.weight,
             x_scale_interleaved,
-            w_scale_interleaved,
+            layer.weight_scale_interleaved,
             layer.alpha,
             output_dtype,
         )
