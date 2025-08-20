@@ -37,6 +37,24 @@ def is_symmetric_memory_enabled():
     return global_server_args_dict["enable_symm_mem"]
 
 
+import functools
+import time
+
+
+def timeit(func):
+    @functools.wraps(func)
+    def wrapper_timer(*args, **kwargs):
+        start_time = time.perf_counter()
+        result = func(*args, **kwargs)
+        end_time = time.perf_counter()
+        total_time = end_time - start_time
+        print(f"Function {func.__name__!r} took {total_time:.4f} seconds to execute.")
+        return result
+
+    return wrapper_timer
+
+
+@timeit
 def is_symmetric_memory_tensor(tensor: torch.Tensor):
     if not is_symmetric_memory_enabled():
         return False
