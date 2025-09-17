@@ -50,12 +50,6 @@ if _use_aiter:
     from aiter.fused_moe import fused_moe
     from aiter.ops.shuffle import shuffle_weight
 
-try:
-    from flashinfer.fused_moe import cutlass_fused_moe as flashinfer_cutlass_fused_moe
-except ImportError:
-    flashinfer_cutlass_fused_moe = None
-
-
 class UnquantizedEmbeddingMethod(QuantizeMethodBase):
     """Unquantized method for embeddings."""
 
@@ -165,6 +159,13 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
 
             self.triton_kernel_moe_forward = _tk_forward
             self.triton_kernel_moe_with_bias_forward = _tk_with_bias_forward
+
+        self.flashinfer_cutlass_fused_moe_forward = None
+        if torch.cuda.is_available() and self.use_flashinfer_cutlass:
+            from sglang.srt.layers.moe.flashinfer_cutlass_moe import (
+                flashinfer_cutlass_fused_moe_forward as _flashinfer_cutlass_fused_moe_forward,
+            )
+            self.flashinfer_cutlass_fused_moe_forward = _flashinfer_cutlass_fused_moe_forward
 
     def create_weights(
         self,
@@ -278,12 +279,15 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
         moe_runner_config = self.moe_runner_config
 
         if self.use_flashinfer_cutlass:
-            output = flashinfer_cutlass_fused_moe(
+            assert self.flashinfer_cutlass_fused_moe_forward is not None
+            output = self.flashinfer_cutlass_fused_moe_forward(
                 input=x,
                 token_selected_experts=topk_output.topk_ids,
                 token_final_scales=topk_output.topk_weights,
                 fc1_expert_weights=layer.w13_weight,
                 fc2_expert_weights=layer.w2_weight,
+                fc1_expert_biases=layer.w13_weight_bias if self.with_bias else None,
+                fc2_expert_biases=layer.w2_weight_bias if self.with_bias else None,
                 output_dtype=x.dtype,
                 quant_scales=None,
                 ep_size=layer.moe_ep_size,
@@ -291,7 +295,7 @@ class UnquantizedFusedMoEMethod(FusedMoEMethodBase, CustomOp):
                 tp_size=layer.moe_tp_size,
                 tp_rank=layer.moe_tp_rank,
                 tune_max_num_tokens=next_power_of_2(x.shape[0]),
-            )[0]
+            )
             return StandardCombineInput(hidden_states=output)
         elif self.use_triton_kernels:
             if self.with_bias:
