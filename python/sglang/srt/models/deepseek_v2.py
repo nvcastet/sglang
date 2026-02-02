@@ -110,6 +110,7 @@ from sglang.srt.layers.moe.utils import (
     is_deepep_class_backend,
     is_sbo_enabled,
     is_tbo_enabled,
+    is_fused_grouped_gemm_combine_enabled,
 )
 from sglang.srt.layers.quantization.base_config import QuantizationConfig
 from sglang.srt.layers.quantization.fp8 import Fp8Config
@@ -984,7 +985,12 @@ class DeepseekV2MoE(nn.Module):
         input_ids_global: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         shared_output = None
-        sbo_enabled_flag = self._fuse_shared_experts_inside_sbo and not self.is_nextn
+        fused_down_gemm_combine = is_fused_grouped_gemm_combine_enabled()
+        sbo_enabled_flag = (
+            self._fuse_shared_experts_inside_sbo
+            and not self.is_nextn
+            and not fused_down_gemm_combine
+        )
         sbo_overlap_dispatch_flag = (
             sbo_enabled_flag and SboFlags.enable_dispatch_shared_one_stream_overlap()
         )
