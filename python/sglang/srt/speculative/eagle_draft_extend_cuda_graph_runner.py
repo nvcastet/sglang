@@ -403,6 +403,7 @@ class EAGLEDraftExtendCudaGraphRunner:
             self.positions.zero_()
             self.accept_length.fill_(self.num_tokens_per_bs)
             self.extend_seq_lens.fill_(self.num_tokens_per_bs)
+            self.req_pool_indices.zero_()
 
         # Common inputs
         self.input_ids[:num_tokens].copy_(forward_batch.input_ids)
