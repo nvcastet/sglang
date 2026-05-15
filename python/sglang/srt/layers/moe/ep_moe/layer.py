@@ -332,7 +332,9 @@ class DeepEPMoE(FusedMoE):
         self,
         dispatch_output: DeepEPLLDispatchOutput,
     ):
-        hidden_states, hidden_states_scale, _, _, masked_m, _ = dispatch_output
+        hidden_states = dispatch_output.hidden_states
+        hidden_states_scale = dispatch_output.hidden_states_scale
+        masked_m = dispatch_output.masked_m
         assert hidden_states_scale is None
         assert self.moe_runner_config.activation == "silu"
         assert self.moe_runner_config.is_gated
@@ -363,19 +365,14 @@ class DeepEPMoE(FusedMoE):
         self,
         dispatch_output: DeepEPLLDispatchOutput,
     ):
-        (
-            hidden_states,
-            hidden_states_scale,
-            _,
-            _,
-            masked_m,
-            _,
-            recv_topk_weights,
-            recv_rank_info,
-            recv_idx_info,
-            combine_out,
-            combine_out_ptrs,
-        ) = dispatch_output
+        hidden_states = dispatch_output.hidden_states
+        hidden_states_scale = dispatch_output.hidden_states_scale
+        masked_m = dispatch_output.masked_m
+        recv_topk_weights = dispatch_output.recv_topk_weights
+        recv_rank_info = dispatch_output.recv_rank_info
+        recv_idx_info = dispatch_output.recv_idx_info
+        combine_out = dispatch_output.combine_out
+        combine_out_ptrs = dispatch_output.combine_out_ptrs
         assert self.quant_method is not None
         assert self.moe_runner_config.activation == "silu"
 
@@ -470,14 +467,9 @@ class DeepEPMoE(FusedMoE):
         elif DispatchOutputChecker.format_is_deepep_ll(dispatch_output):
             if TYPE_CHECKING:
                 assert isinstance(dispatch_output, DeepEPLLDispatchOutput)
-            (
-                hidden_states,
-                hidden_states_scale,
-                topk_ids,
-                topk_weights,
-                group_list,
-                _,
-            ) = dispatch_output
+            hidden_states = dispatch_output.hidden_states
+            hidden_states_scale = dispatch_output.hidden_states_scale
+            group_list = dispatch_output.masked_m
 
             group_list = group_list.to(torch.int64)
 

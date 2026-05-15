@@ -241,7 +241,7 @@ def flashinfer_cutedsl_moe_masked(
     )
 
     if envs.SGLANG_FUSED_GROUPED_GEMM_COMBINE_FP32.get():
-        combine_out = combine_out.to(torch.bfloat16)
+        out = out.to(torch.bfloat16)
 
     if not is_combine_fusion:
         # in logical [m, k, l]
