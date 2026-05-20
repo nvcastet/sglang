@@ -1,10 +1,15 @@
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import torch
 
 from sglang.srt.eplb.expert_location_dispatch import ExpertLocationDispatchInfo
 from sglang.srt.layers.moe.topk import (
     biased_grouped_topk_impl as native_biased_grouped_topk,
+    topk_module,
+    TopKConfig,
+    select_experts,
 )
 from sglang.srt.layers.moe.topk import biased_topk_impl as native_biased_topk
 from sglang.srt.layers.moe.topk import fused_topk_torch_native as native_fused_topk
@@ -170,6 +175,70 @@ class TestBiasedTopK(CustomTestCase):
         )
 
         torch.testing.assert_close(topk_ids, torch.tensor([[0, 1]], dtype=torch.int32))
+
+
+class TestEPLBTopKDispatch(CustomTestCase):
+    def test_biased_topk_remaps_once_in_postprocess(self):
+        num_logical_experts = 384
+        hidden_states = torch.randn(2, 4, dtype=torch.float32)
+        gating_output = torch.full((2, num_logical_experts), -10.0)
+        gating_output[0, 383] = 10.0
+        gating_output[0, 382] = 9.0
+        gating_output[1, 381] = 10.0
+        gating_output[1, 380] = 9.0
+        correction_bias = torch.zeros(num_logical_experts)
+        expert_location_dispatch_info = SimpleNamespace(ep_dispatch_algorithm="dynamic")
+        remap_inputs = []
+
+        def fake_logical_to_physical(topk_ids, info):
+            self.assertIs(info, expert_location_dispatch_info)
+            remap_inputs.append(topk_ids.clone())
+            self.assertLess(int(topk_ids.max()), num_logical_experts)
+            return topk_ids + 16
+
+        def fake_postprocess(topk_ids, info, num_token_non_padded):
+            self.assertIsNone(num_token_non_padded)
+            return fake_logical_to_physical(topk_ids, info)
+
+        biased_topk_impl = getattr(
+            topk_module.biased_topk_impl,
+            "_torchdynamo_orig_callable",
+            topk_module.biased_topk_impl,
+        )
+        with (
+            patch.object(topk_module, "_is_cuda", True),
+            patch.object(topk_module, "biased_topk_impl", biased_topk_impl),
+            patch.object(
+                topk_module.envs.SGLANG_OPT_USE_JIT_KERNEL_FUSED_TOPK,
+                "get",
+                return_value=False,
+            ),
+            patch.object(
+                topk_module,
+                "topk_ids_logical_to_physical",
+                new=fake_logical_to_physical,
+            ),
+            patch.object(
+                topk_module,
+                "_biased_grouped_topk_postprocess",
+                new=fake_postprocess,
+            ),
+        ):
+            topk_output = select_experts(
+                hidden_states=hidden_states,
+                router_logits=gating_output,
+                topk_config=TopKConfig(
+                    top_k=2,
+                    renormalize=False,
+                    scoring_func="sqrtsoftplus",
+                    correction_bias=correction_bias,
+                ),
+                layer_id=0,
+                expert_location_dispatch_info=expert_location_dispatch_info,
+            )
+
+        self.assertEqual(len(remap_inputs), 1)
+        self.assertGreaterEqual(int(topk_output.topk_ids.min()), num_logical_experts)
 
 
 class TestTopK(CustomTestCase):

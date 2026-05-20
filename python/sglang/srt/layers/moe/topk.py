@@ -1305,7 +1305,9 @@ def _post_process_topk_ids(
         # EPLB dispatch must only remap the routed expert columns.
         # The shared expert column (value = n_routed_experts) would be out-of-bounds
         # for the logical-to-physical dispatch table.
-        if num_fused_shared_experts > 0 and is_deepep_class_backend():
+        if num_fused_shared_experts > 0 and (
+            is_deepep_class_backend() or expert_location_dispatch_info is not None
+        ):
             shared_cols = topk_ids[:, -num_fused_shared_experts:]
             routed_cols = topk_ids[:, :-num_fused_shared_experts]
             routed_cols = _biased_grouped_topk_postprocess(
